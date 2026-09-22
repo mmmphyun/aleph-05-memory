@@ -7,6 +7,8 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+const { executePush, executeFetch, getDatabaseSchema } = require('../lib/sync-engine');
+const { NotionClient } = require('../lib/notion-client');
 
 function printUsage() {
   const usage = `
@@ -59,7 +61,28 @@ function parseArgs(rawArgs) {
   return args;
 }
 
+// .env 파일이 존재하는 경우 환경변수 로드
+function loadEnv() {
+  const envPath = path.resolve(process.cwd(), '.env');
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx !== -1) {
+        const k = trimmed.slice(0, eqIdx).trim();
+        const v = trimmed.slice(eqIdx + 1).trim();
+        if (!process.env[k]) {
+          process.env[k] = v;
+        }
+      }
+    }
+  }
+}
+
 async function main() {
+  loadEnv();
   const rawArgs = process.argv.slice(2);
   const parsed = parseArgs(rawArgs);
 
@@ -87,29 +110,40 @@ async function main() {
     process.exit(1);
   }
 
-  // 추후 각 커맨드 모듈 연결
   switch (parsed.command) {
-    case 'init':
+    case 'init': {
       if (parsed.options.help) {
         console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID>");
         process.exit(0);
       }
-      console.log(`[INIT] Running schema initialization...`);
+      const parent = parsed.options.parent || process.env.NOTION_PARENT_PAGE_ID;
+      if (!parent) {
+        console.error("Error: Missing --parent <PAGE_ID_OR_URL>");
+        process.exit(1);
+      }
+      const client = new NotionClient();
+      const schema = getDatabaseSchema();
+      console.log(`[INIT] Creating Notion Database under parent: ${parent}...`);
+      const res = await client.createDatabase(parent, schema);
+      console.log(`[INIT_SUCCESS] Created Database ID: ${res.data.id}`);
       break;
-    case 'push':
+    }
+    case 'push': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync push --file <PATH> [--phase <PHASE>] [--pass <NUM>] [--fail <NUM>]");
+        console.log("Usage: session-sync push --file <PATH> [--phase <PHASE>] [--pass <NUM>] [--fail <NUM>] [--dry-run]");
         process.exit(0);
       }
-      console.log(`[PUSH] Running session push...`);
+      await executePush(parsed.options);
       break;
-    case 'fetch':
+    }
+    case 'fetch': {
       if (parsed.options.help) {
         console.log("Usage: session-sync fetch <--list | --latest | --tag <TAG>> [--out <PATH>]");
         process.exit(0);
       }
-      console.log(`[FETCH] Running session fetch...`);
+      await executeFetch(parsed.options);
       break;
+    }
   }
 }
 

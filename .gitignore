@@ -1,0 +1,18 @@
+# Environment variables and secrets
+.env
+.env.local
+*.env
+
+# Operating System & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local cache and temporary artifacts
+.sync_cache/
+tests/out/
+*.log
+
+# Dependencies (if any in future)
+node_modules/

@@ -67,4 +67,20 @@ console.log('[TEST] Starting CLI Routing Tests...');
   console.log('  PASS: doctor --help 옵션 정상 처리');
 }
 
+// 6. search --help 플래그 검증
+{
+  const res = runCLI('search --help');
+  assert.strictEqual(res.status, 0, 'search --help 시 exit 0이어야 함');
+  assert.match(res.stdout, /Usage: session-sync search --query <TEXT>/, 'search 도움말 형식 검증');
+  console.log('  PASS: search --help 옵션 정상 처리');
+}
+
+// 7. verify --help 플래그 검증
+{
+  const res = runCLI('verify --help');
+  assert.strictEqual(res.status, 0, 'verify --help 시 exit 0이어야 함');
+  assert.match(res.stdout, /Usage: session-sync verify/, 'verify 도움말 형식 검증');
+  console.log('  PASS: verify --help 옵션 정상 처리');
+}
+
 console.log('[TEST] All CLI Routing Tests Passed Successfully.');

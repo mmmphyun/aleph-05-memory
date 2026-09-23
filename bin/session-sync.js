@@ -15,6 +15,8 @@ const { exportSessionMarkdown, listExportedArchives, ensureGitignoreEntry } = re
 const { saveProjectCache } = require('../lib/project-metadata');
 const { executeScaffold } = require('../lib/scaffold');
 const { executeDoctor } = require('../lib/doctor');
+const { executeSearch } = require('../lib/search-engine');
+const { executeVerify } = require('../lib/verifier');
 
 function printUsage() {
   const usage = `
@@ -26,6 +28,8 @@ Commands:
   fetch     Notion DB에서 세션 인덱스 또는 인수인계 본문 인출 (--diff 지원)
   scaffold  작업 트리 상태 기반 7섹션 인수인계서 초안 자동 생성
   doctor    환경 무결성 및 Notion 연결 상태 전수 진단
+  search    과거 세션 아카이브 대상 초고속 BM25 렉시컬 검색
+  verify    인수인계서와 실제 Git/작업트리/테스트 상태 불변식 검증
   hook      Git pre-push 훅 설치(install) 또는 실행(exec)
   ci        테스트 자동 실행, pass/fail 집계 및 Notion 푸시
   export    로컬 .session-memory/archives/ 에 마크다운 영구 보관
@@ -137,7 +141,7 @@ async function main() {
     process.exit(1);
   }
 
-  const validCommands = ['init', 'push', 'fetch', 'scaffold', 'doctor', 'hook', 'ci', 'export'];
+  const validCommands = ['init', 'push', 'fetch', 'scaffold', 'doctor', 'search', 'verify', 'hook', 'ci', 'export'];
   if (!validCommands.includes(parsed.command)) {
     console.error(`Error: Unknown command '${parsed.command}'.`);
     console.error(`Available commands: ${validCommands.join(', ')}`);
@@ -145,6 +149,35 @@ async function main() {
   }
 
   switch (parsed.command) {
+    case 'search': {
+      if (parsed.options.help) {
+        console.log("Usage: session-sync search --query <TEXT> [--section <NAME>] [--limit <NUM>] [--json]");
+        process.exit(0);
+      }
+      executeSearch({
+        query: parsed.options.query,
+        section: parsed.options.section,
+        limit: parsed.options.limit,
+        json: Boolean(parsed.options.json)
+      });
+      break;
+    }
+
+    case 'verify': {
+      if (parsed.options.help) {
+        console.log("Usage: session-sync verify [--file <PATH>] [--run-test] [--timeout <MS>] [--json] [--silent]");
+        process.exit(0);
+      }
+      executeVerify({
+        file: parsed.options.file,
+        runTest: Boolean(parsed.options['run-test']),
+        timeout: parsed.options.timeout ? Number(parsed.options.timeout) : undefined,
+        json: Boolean(parsed.options.json),
+        silent: Boolean(parsed.options.silent)
+      });
+      break;
+    }
+
     case 'scaffold': {
       if (parsed.options.help) {
         console.log("Usage: session-sync scaffold [--out <PATH>] [--force] [--stdout]");
@@ -233,10 +266,14 @@ async function main() {
 
     case 'fetch': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync fetch <--list | --latest | --diff> [--out <PATH>]");
+        console.log("Usage: session-sync fetch <--list | --latest | --diff> [--out <PATH>] [--verify]");
         process.exit(0);
       }
       await executeFetch(parsed.options);
+      if (parsed.options.verify && (parsed.options.latest || parsed.options.out)) {
+        const targetHandover = parsed.options.out || 'HANDOVER.md';
+        executeVerify({ file: targetHandover, runTest: false });
+      }
       break;
     }
 

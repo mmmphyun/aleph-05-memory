@@ -18,7 +18,9 @@ const testSuites = [
   'tests/test-diff-engine.js',
   'tests/test-exporter.js',
   'tests/test-scaffold.js',
-  'tests/test-doctor.js'
+  'tests/test-doctor.js',
+  'tests/test-search-engine.js',
+  'tests/test-verifier.js'
 ];
 
 console.log('================================================================');

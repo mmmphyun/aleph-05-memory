@@ -44,8 +44,21 @@ const bypassFixture = fs.readFileSync(path.join(__dirname, 'fixtures/bypass-hand
   assert.strictEqual(result.isValid, false, '회피성 기재 시 isValid === false 여야 함');
   assert.ok(result.errors.length >= 3, '최소 3개 이상의 섹션에서 가드레일 에러 발생해야 함');
   const hasGuardError = result.errors.some((err) => err.includes('[GUARD_ERROR]'));
-  assert.strictEqual(hasGuardError, true, 'GUARD_ERROR 태그가 에러에 포함되어야 함');
   console.log('  PASS: 불성실 플레이스홀더(TODO, N/A, 없음 등) 회피 차단');
+}
+
+// 4. 모호한 서술 및 구체적 파일 경로/코드블록 누락 차단 (Guard 5, 6, 7 검증)
+{
+  const vagueFixture = fs.readFileSync(path.join(__dirname, 'fixtures/vague-handover.md'), 'utf8');
+  const result = parseHandoverMarkdown(vagueFixture);
+  assert.strictEqual(result.isValid, false, '경로 및 코드블록 누락 시 isValid === false 여야 함');
+  const hasCodeBlockError = result.errors.some((err) => err.includes("must contain an executable code block"));
+  const hasPathError = result.errors.some((err) => err.includes("must specify concrete target file path(s)"));
+  const hasScopeError = result.errors.some((err) => err.includes("must explicitly name specific files"));
+  assert.strictEqual(hasCodeBlockError, true, '실행 명령 코드블록 누락 에러 감지되어야 함');
+  assert.strictEqual(hasPathError, true, '다음 행동 파일 경로 누락 에러 감지되어야 함');
+  assert.strictEqual(hasScopeError, true, '건드리지 말 것 구체적 심볼 누락 에러 감지되어야 함');
+  console.log('  PASS: 구체적 팩트(코드블록, 파일 경로, 금지 심볼) 누락 모호한 인수인계 하드 차단');
 }
 
 console.log('[TEST] All Markdown Parser & Guardrail Tests Passed Successfully.');

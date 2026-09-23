@@ -16,3 +16,4 @@ tests/out/
 
 # Dependencies (if any in future)
 node_modules/
+.session-memory/

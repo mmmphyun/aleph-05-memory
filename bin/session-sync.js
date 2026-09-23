@@ -9,15 +9,22 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { executePush, executeFetch, getDatabaseSchema } = require('../lib/sync-engine');
 const { NotionClient } = require('../lib/notion-client');
+const { installHook, executeHook } = require('../lib/git-hook');
+const { runCiPipeline } = require('../lib/ci-runner');
+const { exportSessionMarkdown, listExportedArchives } = require('../lib/exporter');
+const { saveProjectCache } = require('../lib/project-metadata');
 
 function printUsage() {
   const usage = `
 Usage: session-sync <command> [options]
 
 Commands:
-  init   빈 Notion 페이지 하위에 세션 메모리 Database 스키마 구축
-  push   현재 세션 작업물(HANDOVER.md, ADR 등)을 Notion DB 및 로컬 캐시에 적재
-  fetch  Notion DB에서 세션 인덱스(목차) 또는 인수인계 본문 인출
+  init    빈 Notion 페이지 하위에 2-Tier Projects/Session DB 스키마 구축
+  push    현재 세션 작업물(HANDOVER.md)을 Notion DB 및 로컬 큐에 적재
+  fetch   Notion DB에서 세션 인덱스 또는 인수인계 본문 인출 (--diff 지원)
+  hook    Git pre-push 훅 설치(install) 또는 실행(exec)
+  ci      테스트 자동 실행, pass/fail 집계 및 Notion 푸시
+  export  로컬 .session-memory/archives/ 에 마크다운 영구 보관
 
 Options:
   -h, --help     도움말 출력
@@ -31,6 +38,7 @@ Run 'session-sync <command> --help' for command-specific options.
 function parseArgs(rawArgs) {
   const args = {
     command: null,
+    subcommand: null,
     options: {},
     positionals: []
   };
@@ -52,6 +60,8 @@ function parseArgs(rawArgs) {
       }
     } else if (!args.command) {
       args.command = arg;
+    } else if (!args.subcommand) {
+      args.subcommand = arg;
     } else {
       args.positionals.push(arg);
     }
@@ -81,35 +91,6 @@ function loadEnv() {
   }
 }
 
-async function main() {
-  loadEnv();
-  const rawArgs = process.argv.slice(2);
-  const parsed = parseArgs(rawArgs);
-
-  if (parsed.options.version) {
-    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
-    console.log(`session-sync v${pkg.version}`);
-    process.exit(0);
-  }
-
-  if (parsed.options.help && !parsed.command) {
-    printUsage();
-    process.exit(0);
-  }
-
-  if (!parsed.command) {
-    console.error("Usage: session-sync <init|push|fetch> [options]");
-    console.error("Error: Subcommand missing. Expected 'init', 'push', or 'fetch'.");
-    process.exit(1);
-  }
-
-  const validCommands = ['init', 'push', 'fetch'];
-  if (!validCommands.includes(parsed.command)) {
-    console.error(`Error: Unknown command '${parsed.command}'.`);
-    console.error("Available commands: init, push, fetch");
-    process.exit(1);
-  }
-
 function extractPageId(raw) {
   if (!raw) return raw;
   const cleaned = raw.split('?')[0].split('#')[0];
@@ -130,10 +111,39 @@ function updateEnvFile(key, value) {
   fs.writeFileSync(envPath, content, 'utf8');
 }
 
+async function main() {
+  loadEnv();
+  const rawArgs = process.argv.slice(2);
+  const parsed = parseArgs(rawArgs);
+
+  if (parsed.options.version) {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    console.log(`session-sync v${pkg.version}`);
+    process.exit(0);
+  }
+
+  if (parsed.options.help && !parsed.command) {
+    printUsage();
+    process.exit(0);
+  }
+
+  if (!parsed.command) {
+    console.error("Usage: session-sync <init|push|fetch> [options]");
+    console.error("Error: Subcommand missing. Run 'session-sync --help' for details.");
+    process.exit(1);
+  }
+
+  const validCommands = ['init', 'push', 'fetch', 'hook', 'ci', 'export'];
+  if (!validCommands.includes(parsed.command)) {
+    console.error(`Error: Unknown command '${parsed.command}'.`);
+    console.error(`Available commands: ${validCommands.join(', ')}`);
+    process.exit(1);
+  }
+
   switch (parsed.command) {
     case 'init': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID>");
+        console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID> [--with-projects-registry]");
         process.exit(0);
       }
       const rawParent = parsed.options.parent || process.env.NOTION_PARENT_PAGE_ID;
@@ -143,15 +153,32 @@ function updateEnvFile(key, value) {
       }
       const parentId = extractPageId(rawParent);
       const client = new NotionClient();
-      const schema = getDatabaseSchema();
-      console.log(`[INIT] Creating Notion Database under parent page: ${parentId}...`);
-      const res = await client.createDatabase(parentId, schema);
-      const dbId = res.data.id;
-      console.log(`[INIT_SUCCESS] Created Database ID: ${dbId}`);
-      updateEnvFile('NOTION_DATABASE_ID', dbId);
-      console.log(`[ENV_UPDATE] Updated NOTION_DATABASE_ID in .env`);
+
+      console.log(`[INIT] Creating 2-Tier Notion Databases under parent page: ${parentId}...`);
+
+      // 1. Projects DB 생성
+      const projDbRes = await client.createProjectsDatabase(parentId);
+      const projectsDbId = projDbRes.data.id;
+      console.log(`[INIT_SUCCESS] Created Projects DB ID: ${projectsDbId}`);
+      updateEnvFile('NOTION_PROJECTS_DATABASE_ID', projectsDbId);
+
+      // 2. Session Memory DB 생성 (Projects DB와의 Relation 연결)
+      const sessionSchema = getDatabaseSchema('Agent Session Memory DB', projectsDbId);
+      const sessionDbRes = await client.createDatabase(parentId, sessionSchema);
+      const sessionDbId = sessionDbRes.data.id;
+      console.log(`[INIT_SUCCESS] Created Session Memory DB ID: ${sessionDbId}`);
+      updateEnvFile('NOTION_DATABASE_ID', sessionDbId);
+
+      // 3. 로컬 캐시 기록
+      saveProjectCache(process.cwd(), {
+        projectsDatabaseId: projectsDbId,
+        sessionDatabaseId: sessionDbId
+      });
+
+      console.log(`[ENV_UPDATE] Updated NOTION_PROJECTS_DATABASE_ID & NOTION_DATABASE_ID in .env`);
       break;
     }
+
     case 'push': {
       if (parsed.options.help) {
         console.log("Usage: session-sync push --file <PATH> [--phase <PHASE>] [--pass <NUM>] [--fail <NUM>] [--dry-run]");
@@ -160,12 +187,70 @@ function updateEnvFile(key, value) {
       await executePush(parsed.options);
       break;
     }
+
     case 'fetch': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync fetch <--list | --latest | --tag <TAG>> [--out <PATH>]");
+        console.log("Usage: session-sync fetch <--list | --latest | --diff> [--out <PATH>]");
         process.exit(0);
       }
       await executeFetch(parsed.options);
+      break;
+    }
+
+    case 'hook': {
+      const action = parsed.subcommand || (parsed.options.install ? 'install' : (parsed.options.exec ? 'exec' : null));
+      if (parsed.options.help || !action) {
+        console.log("Usage: session-sync hook <install | exec> [options]");
+        process.exit(0);
+      }
+
+      if (action === 'install') {
+        installHook(process.cwd());
+      } else if (action === 'exec') {
+        await executeHook(parsed.options);
+      } else {
+        console.error(`Unknown hook action '${action}'. Expected 'install' or 'exec'.`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'ci': {
+      if (parsed.options.help) {
+        console.log("Usage: session-sync ci [--test-cmd <CMD>] [--file <PATH>]");
+        process.exit(0);
+      }
+      const ciResult = await runCiPipeline(parsed.options);
+      process.exit(ciResult.exitCode);
+      break;
+    }
+
+    case 'export': {
+      if (parsed.options.help) {
+        console.log("Usage: session-sync export [--file <PATH>] [--out <DIR>] [--list]");
+        process.exit(0);
+      }
+      if (parsed.options.list) {
+        const archives = listExportedArchives(parsed.options.out);
+        console.log(`[ARCHIVES] Found ${archives.length} archive(s):`);
+        for (const a of archives) {
+          console.log(`  - ${a.file} (${a.sizeBytes} bytes)`);
+        }
+      } else {
+        const handoverPath = path.resolve(process.cwd(), parsed.options.file || 'HANDOVER.md');
+        if (!fs.existsSync(handoverPath)) {
+          console.error(`File not found: ${handoverPath}`);
+          process.exit(1);
+        }
+        const markdown = fs.readFileSync(handoverPath, 'utf8');
+        exportSessionMarkdown({
+          phase: parsed.options.phase || 'SNAPSHOT',
+          commitHash: parsed.options.commit || 'manual-export',
+          passCount: parsed.options.pass || 0,
+          failCount: parsed.options.fail || 0,
+          rawMarkdown: markdown
+        }, parsed.options.out);
+      }
       break;
     }
   }

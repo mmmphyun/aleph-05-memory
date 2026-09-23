@@ -11,7 +11,12 @@ const testSuites = [
   'tests/test-secret-scanner.js',
   'tests/test-cache.js',
   'tests/test-notion-client.js',
-  'tests/test-e2e-sync.js'
+  'tests/test-e2e-sync.js',
+  'tests/test-project-metadata.js',
+  'tests/test-pending-queue.js',
+  'tests/test-git-hook.js',
+  'tests/test-diff-engine.js',
+  'tests/test-exporter.js'
 ];
 
 console.log('================================================================');

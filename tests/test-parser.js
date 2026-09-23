@@ -61,4 +61,38 @@ const bypassFixture = fs.readFileSync(path.join(__dirname, 'fixtures/bypass-hand
   console.log('  PASS: 구체적 팩트(코드블록, 파일 경로, 금지 심볼) 누락 모호한 인수인계 하드 차단');
 }
 
+// 5. 디스크에 존재하지 않는 가상 파일 경로(Ghost File) 환각 차단 (Guard 6 검증)
+{
+  const ghostFileMarkdown = `
+# 1. 목표
+환각 파일 테스트
+
+# 2. 현재 상태
+진행 중
+
+# 3. 실행 명령
+\`\`\`powershell
+npm test
+\`\`\`
+
+# 4. 통과 검사
+T01 통과
+
+# 5. 남은 문제
+문제 없음
+
+# 6. 다음 행동
+존재하지 않는 가상 파일인 \`scripts/ghost_crawler_v99.js\` 파일을 수정하여 작업을 재개한다.
+
+# 7. 건드리지 말 것
+\`lib/markdown-parser.js\` 파일 수정 금지
+  `.trim();
+
+  const result = parseHandoverMarkdown(ghostFileMarkdown);
+  assert.strictEqual(result.isValid, false, '존재하지 않는 파일 경로 적시 시 isValid === false 여야 함');
+  const hasGhostError = result.errors.some((err) => err.includes("does not exist on disk"));
+  assert.strictEqual(hasGhostError, true, 'does not exist on disk 에러가 감지되어야 함');
+  console.log('  PASS: 존재하지 않는 가상 파일 경로(Ghost File) 환각 하드 차단');
+}
+
 console.log('[TEST] All Markdown Parser & Guardrail Tests Passed Successfully.');

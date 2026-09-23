@@ -17,3 +17,6 @@ tests/out/
 # Dependencies (if any in future)
 node_modules/
 .session-memory/
+HANDOVER.md
+tests/out/test-scaffold/HANDOVER_GEN.md
+tests/out/test-scaffold/HANDOVER_PROTECT.md

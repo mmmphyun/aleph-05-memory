@@ -8,6 +8,7 @@ const testSuites = [
   'tests/test-cli-routing.js',
   'tests/test-parser.js',
   'tests/test-transformer.js',
+  'tests/test-secret-scanner.js',
   'tests/test-cache.js',
   'tests/test-notion-client.js',
   'tests/test-e2e-sync.js'

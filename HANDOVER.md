@@ -2,7 +2,7 @@
 session-sync 범용 도구 도약을 위한 필수 과제(Git Hook 전역 실행 경로 단절 버그 수정, Git Worktree 호환성 확보, 전역 설정 3단계 계층화) 해결 및 완전한 범용 스킬 전환.
 
 # 2. 현재 상태
-- 베이스 커밋: `816dca8` (또는 최신 커밋 HEAD)
+- 베이스 커밋: `81908d9`
 - 구현 완료된 핵심 모듈:
   - `bin/session-sync.js`: init (2-Tier DB), push, fetch (--diff), hook (install/exec), ci, export 라우터
   - `lib/notion-client.js`: Projects DB 스키마 생성 및 Relation 양방향 연결, 100블록 배치 전송

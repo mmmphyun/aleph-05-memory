@@ -143,7 +143,7 @@ async function main() {
   switch (parsed.command) {
     case 'init': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID> [--with-projects-registry]");
+        console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID> [--write-env]");
         process.exit(0);
       }
       const rawParent = parsed.options.parent || process.env.NOTION_PARENT_PAGE_ID;
@@ -160,14 +160,12 @@ async function main() {
       const projDbRes = await client.createProjectsDatabase(parentId);
       const projectsDbId = projDbRes.data.id;
       console.log(`[INIT_SUCCESS] Created Projects DB ID: ${projectsDbId}`);
-      updateEnvFile('NOTION_PROJECTS_DATABASE_ID', projectsDbId);
 
       // 2. Session Memory DB 생성 (Projects DB와의 Relation 연결)
       const sessionSchema = getDatabaseSchema('Agent Session Memory DB', projectsDbId);
       const sessionDbRes = await client.createDatabase(parentId, sessionSchema);
       const sessionDbId = sessionDbRes.data.id;
       console.log(`[INIT_SUCCESS] Created Session Memory DB ID: ${sessionDbId}`);
-      updateEnvFile('NOTION_DATABASE_ID', sessionDbId);
 
       // 3. 로컬 캐시 기록
       saveProjectCache(process.cwd(), {
@@ -175,7 +173,18 @@ async function main() {
         sessionDatabaseId: sessionDbId
       });
 
-      console.log(`[ENV_UPDATE] Updated NOTION_PROJECTS_DATABASE_ID & NOTION_DATABASE_ID in .env`);
+      // 4. 환경변수 가이드 또는 --write-env 명시 시 파일 갱신
+      if (parsed.options['write-env']) {
+        updateEnvFile('NOTION_PROJECTS_DATABASE_ID', projectsDbId);
+        updateEnvFile('NOTION_DATABASE_ID', sessionDbId);
+        console.log(`[ENV_UPDATE] Updated NOTION_PROJECTS_DATABASE_ID & NOTION_DATABASE_ID in .env`);
+      } else {
+        console.log(`\n================================================================`);
+        console.log(`[ENV_GUIDE] Add the following to your local .env file:`);
+        console.log(`NOTION_PROJECTS_DATABASE_ID=${projectsDbId}`);
+        console.log(`NOTION_DATABASE_ID=${sessionDbId}`);
+        console.log(`================================================================\n`);
+      }
       break;
     }
 

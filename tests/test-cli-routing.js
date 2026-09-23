@@ -51,4 +51,20 @@ console.log('[TEST] Starting CLI Routing Tests...');
   console.log('  PASS: 알 수 없는 서브커맨드 예외 처리');
 }
 
+// 4. scaffold --help 플래그 검증
+{
+  const res = runCLI('scaffold --help');
+  assert.strictEqual(res.status, 0, 'scaffold --help 시 exit 0이어야 함');
+  assert.match(res.stdout, /Usage: session-sync scaffold \[--out <PATH>\] \[--force\] \[--stdout\]/, 'scaffold 도움말 형식 검증');
+  console.log('  PASS: scaffold --help 옵션 정상 처리');
+}
+
+// 5. doctor --help 플래그 검증
+{
+  const res = runCLI('doctor --help');
+  assert.strictEqual(res.status, 0, 'doctor --help 시 exit 0이어야 함');
+  assert.match(res.stdout, /Usage: session-sync doctor \[--silent\] \[--timeout <MS>\]/, 'doctor 도움말 형식 검증');
+  console.log('  PASS: doctor --help 옵션 정상 처리');
+}
+
 console.log('[TEST] All CLI Routing Tests Passed Successfully.');

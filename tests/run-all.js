@@ -16,7 +16,9 @@ const testSuites = [
   'tests/test-pending-queue.js',
   'tests/test-git-hook.js',
   'tests/test-diff-engine.js',
-  'tests/test-exporter.js'
+  'tests/test-exporter.js',
+  'tests/test-scaffold.js',
+  'tests/test-doctor.js'
 ];
 
 console.log('================================================================');

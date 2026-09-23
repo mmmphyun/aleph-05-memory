@@ -11,20 +11,24 @@ const { executePush, executeFetch, getDatabaseSchema } = require('../lib/sync-en
 const { NotionClient } = require('../lib/notion-client');
 const { installHook, executeHook } = require('../lib/git-hook');
 const { runCiPipeline } = require('../lib/ci-runner');
-const { exportSessionMarkdown, listExportedArchives } = require('../lib/exporter');
+const { exportSessionMarkdown, listExportedArchives, ensureGitignoreEntry } = require('../lib/exporter');
 const { saveProjectCache } = require('../lib/project-metadata');
+const { executeScaffold } = require('../lib/scaffold');
+const { executeDoctor } = require('../lib/doctor');
 
 function printUsage() {
   const usage = `
 Usage: session-sync <command> [options]
 
 Commands:
-  init    빈 Notion 페이지 하위에 2-Tier Projects/Session DB 스키마 구축
-  push    현재 세션 작업물(HANDOVER.md)을 Notion DB 및 로컬 큐에 적재
-  fetch   Notion DB에서 세션 인덱스 또는 인수인계 본문 인출 (--diff 지원)
-  hook    Git pre-push 훅 설치(install) 또는 실행(exec)
-  ci      테스트 자동 실행, pass/fail 집계 및 Notion 푸시
-  export  로컬 .session-memory/archives/ 에 마크다운 영구 보관
+  init      빈 Notion 페이지 하위에 2-Tier Projects/Session DB 스키마 구축
+  push      현재 세션 작업물(HANDOVER.md)을 Notion DB 및 로컬 큐에 적재
+  fetch     Notion DB에서 세션 인덱스 또는 인수인계 본문 인출 (--diff 지원)
+  scaffold  작업 트리 상태 기반 7섹션 인수인계서 초안 자동 생성
+  doctor    환경 무결성 및 Notion 연결 상태 전수 진단
+  hook      Git pre-push 훅 설치(install) 또는 실행(exec)
+  ci        테스트 자동 실행, pass/fail 집계 및 Notion 푸시
+  export    로컬 .session-memory/archives/ 에 마크다운 영구 보관
 
 Options:
   -h, --help     도움말 출력
@@ -133,7 +137,7 @@ async function main() {
     process.exit(1);
   }
 
-  const validCommands = ['init', 'push', 'fetch', 'hook', 'ci', 'export'];
+  const validCommands = ['init', 'push', 'fetch', 'scaffold', 'doctor', 'hook', 'ci', 'export'];
   if (!validCommands.includes(parsed.command)) {
     console.error(`Error: Unknown command '${parsed.command}'.`);
     console.error(`Available commands: ${validCommands.join(', ')}`);
@@ -141,6 +145,34 @@ async function main() {
   }
 
   switch (parsed.command) {
+    case 'scaffold': {
+      if (parsed.options.help) {
+        console.log("Usage: session-sync scaffold [--out <PATH>] [--force] [--stdout]");
+        process.exit(0);
+      }
+      executeScaffold({
+        out: parsed.options.out,
+        force: Boolean(parsed.options.force),
+        stdout: Boolean(parsed.options.stdout)
+      });
+      break;
+    }
+
+    case 'doctor': {
+      if (parsed.options.help) {
+        console.log("Usage: session-sync doctor [--silent] [--timeout <MS>]");
+        process.exit(0);
+      }
+      const docResult = await executeDoctor({
+        silent: Boolean(parsed.options.silent),
+        timeout: parsed.options.timeout ? Number(parsed.options.timeout) : undefined
+      });
+      if (docResult.summary && docResult.summary.hasBlockingFailure) {
+        process.exit(1);
+      }
+      break;
+    }
+
     case 'init': {
       if (parsed.options.help) {
         console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID> [--write-env]");
@@ -167,11 +199,13 @@ async function main() {
       const sessionDbId = sessionDbRes.data.id;
       console.log(`[INIT_SUCCESS] Created Session Memory DB ID: ${sessionDbId}`);
 
-      // 3. 로컬 캐시 기록
+      // 3. 로컬 캐시 기록 및 .gitignore 격리
       saveProjectCache(process.cwd(), {
         projectsDatabaseId: projectsDbId,
         sessionDatabaseId: sessionDbId
       });
+      ensureGitignoreEntry(process.cwd(), '.session-memory/');
+      ensureGitignoreEntry(process.cwd(), 'HANDOVER.md');
 
       // 4. 환경변수 가이드 또는 --write-env 명시 시 파일 갱신
       if (parsed.options['write-env']) {

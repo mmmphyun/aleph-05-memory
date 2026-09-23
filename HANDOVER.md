@@ -2,7 +2,7 @@
 세션 간 7칸 인수인계서, Git 상태, 아키텍처 결정을 Notion DB에 영구 동기화하는 Zero-dependency Node.js CLI (session-sync) 모듈의 범용 도구화 확장 (Project Registry DB, Git Hooks/CI, 토큰 절감형 델타 페치, 오프라인 아카이브) 및 신규 세션 전환 준비.
 
 # 2. 현재 상태
-- 베이스 커밋: `1bf8b5b`
+- 베이스 커밋: `7f3eb8a`
 - 핵심 컴포넌트:
   - `bin/session-sync.js`: init, push, fetch 서브커맨드 라우터 및 .env 동적 로더
   - `lib/markdown-parser.js`: 7중 물리적 가드레일 (회피 차단, 코드블록, 런타임/환경변수, 파일 경로 필수 검증)

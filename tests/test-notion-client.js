@@ -74,6 +74,12 @@ async function runMockServerTests() {
         }));
       }
 
+      // 시나리오 3: 100개 초과 블록 append (PATCH)
+      if (req.url.startsWith('/v1/blocks/') && req.url.endsWith('/children') && req.method === 'PATCH') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ object: 'list', results: receivedBody.children }));
+      }
+
       res.writeHead(404);
       res.end();
     });
@@ -112,6 +118,23 @@ async function runMockServerTests() {
       assert.strictEqual(queryRes.statusCode, 200);
       assert.strictEqual(queryRes.data.results.length, 1);
       console.log('  PASS: Mock Database Query 응답 처리 검증');
+    }
+
+    // 4. 100개 초과 블록 자동 배치 분할 (createPage + appendBlockChildren) 검증
+    {
+      const dummyBlocks = Array.from({ length: 150 }, (_, i) => ({
+        object: 'block',
+        type: 'paragraph',
+        paragraph: { rich_text: [{ type: 'text', text: { content: `Block ${i}` } }] }
+      }));
+
+      requestCount = 0;
+      const result = await client.createPage('mock-db-id', {
+        Name: { title: [{ text: { content: 'Batch Test' } }] }
+      }, dummyBlocks);
+
+      assert.strictEqual(result.statusCode, 200);
+      console.log('  PASS: 100개 초과 블록 2단계 자동 배치 분할 전송 검증 (100개 생성 + 50개 append)');
     }
 
   } finally {

@@ -110,22 +110,46 @@ async function main() {
     process.exit(1);
   }
 
+function extractPageId(raw) {
+  if (!raw) return raw;
+  const cleaned = raw.split('?')[0].split('#')[0];
+  const match = cleaned.match(/([a-f0-9]{32})/i) || cleaned.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+  return match ? match[1].replace(/-/g, '') : raw;
+}
+
+function updateEnvFile(key, value) {
+  const envPath = path.resolve(process.cwd(), '.env');
+  if (!fs.existsSync(envPath)) return;
+  let content = fs.readFileSync(envPath, 'utf8');
+  const regex = new RegExp(`^${key}=.*$`, 'm');
+  if (regex.test(content)) {
+    content = content.replace(regex, `${key}=${value}`);
+  } else {
+    content += `\n${key}=${value}\n`;
+  }
+  fs.writeFileSync(envPath, content, 'utf8');
+}
+
   switch (parsed.command) {
     case 'init': {
       if (parsed.options.help) {
         console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID>");
         process.exit(0);
       }
-      const parent = parsed.options.parent || process.env.NOTION_PARENT_PAGE_ID;
-      if (!parent) {
+      const rawParent = parsed.options.parent || process.env.NOTION_PARENT_PAGE_ID;
+      if (!rawParent) {
         console.error("Error: Missing --parent <PAGE_ID_OR_URL>");
         process.exit(1);
       }
+      const parentId = extractPageId(rawParent);
       const client = new NotionClient();
       const schema = getDatabaseSchema();
-      console.log(`[INIT] Creating Notion Database under parent: ${parent}...`);
-      const res = await client.createDatabase(parent, schema);
-      console.log(`[INIT_SUCCESS] Created Database ID: ${res.data.id}`);
+      console.log(`[INIT] Creating Notion Database under parent page: ${parentId}...`);
+      const res = await client.createDatabase(parentId, schema);
+      const dbId = res.data.id;
+      console.log(`[INIT_SUCCESS] Created Database ID: ${dbId}`);
+      updateEnvFile('NOTION_DATABASE_ID', dbId);
+      console.log(`[ENV_UPDATE] Updated NOTION_DATABASE_ID in .env`);
       break;
     }
     case 'push': {

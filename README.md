@@ -1,75 +1,164 @@
 # session-sync: 멀티 AI 세션 메모리 및 노션 동기화 엔진
 
-여러 LLM 세션(A ➔ B)이 교체되거나 대화 컨텍스트가 초기화되어도, Notion Database를 외부 지속성 메모리로 활용하여 작업 인수인계(7항목 규격)와 프로젝트 상태를 온전히 이어받을 수 있도록 지원하는 무의존성(Zero-dependency) Node.js CLI 도구입니다.
+LLM 대화 세션이 교체되거나 컨텍스트가 초기화되어도 Notion Database를 지속성 백엔드로 활용하여 7섹션 인수인계 규격과 작업 불변식을 복원하는 CLI 도구입니다.
 
 ---
 
-## 주요 기능 및 아키텍처
+## 1. 주요 기능
 
-1. **7칸 인수인계 무결성 가드레일 (`lib/markdown-parser.js`)**:
-   - `목표`, `현재 상태`, `실행 명령`, `통과 검사`, `남은 문제`, `다음 행동`, `건드리지 말 것` 필수 7개 섹션 전수 검증.
-   - `TODO`, `N/A`, `없음` 등 에이전트의 회피성 플레이스홀더 단독 기재 시 즉시 하드 차단(`exit 1`).
-2. **2-Tier 시각적 대시보드 프로비저닝 (`Projects DB ↔ Session Memory DB`)**:
-   - `Projects DB`에서 전체 저장소 현황, 기술 스택, 저장소 URL, 마지막 세션 시각을 시각적으로 조망.
-   - `Session Memory DB`는 개별 세션 인수인계서를 기록하고 Relation 프로퍼티로 프로젝트에 양방향 매핑.
-   - `.session-sync.json` 로컬 캐시를 병행하여 Notion API 추가 조회 비용을 0회로 단축.
-3. **토큰 절감형 마크다운 델타 연산기 (`lib/diff-engine.js`)**:
-   - 직전 세션 대비 변경된 섹션만 추출하여 LLM 프롬프트 토큰 소모를 최소화(`fetch --diff`).
-   - 로컬 파일(`HANDOVER.md`) 복원 시에는 항상 7개 섹션 완전체를 유지하여 가드레일 무결성 보존.
-4. **Git Pre-Push Hook 및 Fail-Open 내결함성 (`lib/git-hook.js`, `lib/local-cache.js`)**:
-   - `git push` 시 자동으로 인수인계서 가드레일을 검증.
-   - 오프라인 또는 Notion 장애 발생 시 `.sync_cache/pending/` 큐에 안전 보관 후 push 정상 통과(Fail-Open), 네트워크 복구 시 자동 재전송(Flush).
-5. **CI 환경 파이프라인 자동화 (`lib/ci-runner.js`)**:
-   - 자식 프로세스로 테스트를 직접 구동하고 stdout 파싱을 통해 Pass/Fail을 자동 집계하여 Notion DB로 푸시.
-6. **오프라인 마크다운 히스토리 아카이브 (`lib/exporter.js`)**:
-   - `.session-memory/archives/` 경로에 타임스탬프 기반 마크다운 스냅샷을 영구 보관하고 `.gitignore`에 자동 등록.
-7. **순수 Node.js 내장 모듈 (Zero-Dependency)**:
-   - 외부 npm 패키지 의존 없이 `node:https`, `node:fs`, `node:child_process`, `node:crypto` 표준 라이브러리만으로 동작.
+- **7섹션 인수인계 가드레일 (`lib/markdown-parser.js`)**:
+  - `목표`, `현재 상태`, `실행 명령`, `통과 검사`, `남은 문제`, `다음 행동`, `건드리지 말 것` 필수 7개 섹션 전수 검증.
+  - 플레이스홀더(`TODO`, `N/A`, `없음`) 단독 기재 차단, ADR(채택/이유/기각대안) 및 I/O 규격 명시 강제.
+- **2-Tier 노션 대시보드 프로비저닝 (`Projects DB ↔ Session Memory DB`)**:
+  - `Projects DB`에서 전체 저장소 현황, 기술 스택, 저장소 URL, 마지막 세션 시각 조망.
+  - `Session Memory DB`는 개별 세션 인수인계서를 기록하고 Relation 프로퍼티로 양방향 매핑.
+- **불변식 검증기 (`lib/verifier.js`)**:
+  - 직전 세션 기준 Git 베이스 커밋 일치 여부(드리프트 탐지), 작업 트리 청결도, 실제 테스트 스위트 통과 여부 검증.
+- **하이브리드 RRF 검색 엔진 (`lib/hybrid-search.js`, `lib/search-engine.js`)**:
+  - BM25 렉시컬 점수와 multilingual-e5 INT8 시맨틱 임베딩 결과를 Reciprocal Rank Fusion(k=60)으로 융합 검색.
+  - ADR Supersedes 묘비(Tombstone) 감점(-80%) 및 SQLite WAL 모드 임베딩 캐싱 적용.
+- **내결함성 및 오프라인 Failover (`lib/sync-engine.js`, `lib/git-hook.js`)**:
+  - Notion API 429 지수 백오프, 오프라인 시 로컬 큐(`pending/`) 적재 및 `.session-memory/archives/` 로컬 아카이브 Failover 복원.
+- **전역 CLI 패키징 (`npm link`)**:
+  - 전역 심볼릭 링크를 통해 모든 타 프로젝트 경로에서 `session-sync` 단독 실행 지원.
 
 ---
 
-## 빠른 시작 (Quick Start)
+## 2. 설치 및 환경 설정
 
-### 1. 환경 변수 설정 (`.env`)
-```env
-NOTION_API_KEY=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-NOTION_PARENT_PAGE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-NOTION_PROJECTS_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+### 2.1 전역 CLI 등록
+```powershell
+# 저장소 루트에서 전역 심볼릭 링크 등록
+npm link
+
+# 설치 확인
+session-sync --version
 ```
 
-### 2. 전체 단위 및 통합 테스트 실행 (12개 스위트)
+### 2.2 환경 변수 설정 (`.env`)
+대상 프로젝트 루트 경로에 `.env` 파일을 구성합니다:
+```env
+# Notion Internal Integration Secret Token (필수)
+NOTION_API_KEY=ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# 상위 Notion 부모 페이지 URL 또는 ID (session-sync init 시 필수)
+NOTION_PARENT_PAGE_ID=https://app.notion.com/p/xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# session-sync init 실행 시 자동 등록되는 데이터베이스 ID
+NOTION_PROJECTS_DATABASE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+NOTION_DATABASE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+---
+
+## 3. CLI 명령어 레퍼런스
+
+### 3.1 프로젝트 초기화 (`init`)
+빈 Notion 부모 페이지 하위에 2-Tier Projects 및 Session Memory 데이터베이스를 자동 구축하고 `.env`를 갱신합니다.
+```powershell
+session-sync init --parent <NOTION_PAGE_URL_OR_ID> --write-env
+```
+
+### 3.2 환경 무결성 진단 (`doctor`)
+런타임 버전, Git VCS, 전역 바이너리 도달성, 환경변수 유효성, Notion API 연결 상태를 전수 진단합니다.
+```powershell
+session-sync doctor
+```
+
+### 3.3 인수인계 초안 자동 생성 (`scaffold`)
+현재 Git 커밋 해시, 변경 파일 목록, 런타임 환경 정보를 추출하여 9대 가드레일을 충족하는 7섹션 마크다운 초안을 생성합니다.
+```powershell
+session-sync scaffold --out HANDOVER.md --force
+```
+
+### 3.4 세션 푸시 (`push`)
+작성된 `HANDOVER.md`를 9대 가드레일로 파싱/검증한 뒤 2,000자 블록 단위로 변환하여 Notion DB 및 로컬 큐에 업로드합니다.
+```powershell
+session-sync push --file HANDOVER.md --phase A_END --pass 21 --fail 0
+```
+
+### 3.5 세션 인출 및 복원 (`fetch`)
+Notion DB에서 세션 목록을 조회하거나, 최신 세션을 로컬 파일로 복원하며 불변식을 즉시 검증합니다.
+```powershell
+# 세션 목차 목록 조회 (경량 Leaf 쿼리)
+session-sync fetch --list
+
+# 최신 세션 복원 및 작업 불변식 실측 검증 (--verify)
+session-sync fetch --latest --out HANDOVER.md --verify
+
+# 직전 세션 대비 가변 섹션 차분만 인출 (프롬프트 토큰 절감)
+session-sync fetch --diff
+
+# Notion API 장애 시 로컬 아카이브에서 안전 복원
+session-sync fetch --latest --out HANDOVER.md --failover-archive
+```
+
+### 3.6 불변식 검증 (`verify`)
+인수인계서에 명시된 베이스 커밋과 실제 Git HEAD의 일치 여부, 작업 트리 청결도, 실제 테스트 통과 여부를 진단합니다.
+```powershell
+# 빠른 상태 진단 (Git HEAD 일치 및 작업 트리 검사)
+session-sync verify
+
+# 테스트 스위트 실제 재현성 전수 검증
+session-sync verify --run-test
+
+# Git 커밋 불일치 발생 시 즉시 프로세스 실패(exit 1) 처리
+session-sync verify --strict
+```
+
+### 3.7 하이브리드 RRF 검색 (`search`)
+과거 세션 아카이브를 대상으로 렉시컬(BM25)과 시맨틱(multilingual-e5)을 결합하여 컨텍스트를 즉시 인출합니다.
+```powershell
+# 하이브리드 RRF 융합 검색 (기본값)
+session-sync search --query "아카이브 복원" --mode hybrid
+
+# 특정 섹션만 필터링 검색
+session-sync search --query "HTTP 429 백오프" --section next
+
+# BM25 단독 검색
+session-sync search --query "Scaffold" --mode bm25
+```
+
+### 3.8 Git Pre-Push 훅 관리 (`hook`)
+`git push` 실행 시 자동으로 세션 상태를 검증하고 동기화하는 Git 훅을 설치합니다.
+```powershell
+session-sync hook install
+```
+
+### 3.9 로컬 아카이브 영구 보관 (`export`)
+세션 마크다운을 `.session-memory/archives/`에 타임스탬프 스냅샷으로 백업합니다 (`.gitignore` 자동 등록).
+```powershell
+session-sync export --file HANDOVER.md
+session-sync export --list
+```
+
+---
+
+## 4. 테스트 스위트 실행
+
+전체 21개 단위 및 통합 테스트 스위트를 구동합니다:
 ```powershell
 npm test
 ```
-
-### 3. CLI 명령어 사용법
-
-```powershell
-# 도움말 확인
-session-sync --help
-
-# 1. 빈 Notion 페이지에 2-Tier Projects & Session DB 스키마 구축
-session-sync init --parent <NOTION_PAGE_ID>
-
-# 2. 작업 인수인계서 검증 및 Notion/캐시 적재
-session-sync push --file ./HANDOVER.md --phase A_END --pass 10 --fail 0
-
-# 3. 과거 세션 목록 경량 조회 (Leaf 속성)
-session-sync fetch --list
-
-# 4. 직전 세션 인수인계 본문 복원 및 델타 확인
-session-sync fetch --latest --out ./HANDOVER.md
-session-sync fetch --diff
-
-# 5. Git pre-push 훅 설치 및 실행
-session-sync hook install
-session-sync hook exec
-
-# 6. CI 테스트 실행 및 자동 동기화
-session-sync ci --test-cmd "npm test"
-
-# 7. 세션 마크다운 로컬 아카이브 덤프
-session-sync export --file ./HANDOVER.md
-session-sync export --list
-```
+검증 대상:
+- `test-cli-routing`: 인자 및 서브커맨드 라우팅 (9/9)
+- `test-parser`: 7섹션 필수 분해 및 가드레일 무결성 (5/5)
+- `test-transformer`: 2,000자 블록 분할 및 양방향 역직렬화 (3/3)
+- `test-secret-scanner`: Gitleaks 정규식 기반 시크릿 차단 (4/4)
+- `test-cache`: 로컬 JSON 스냅샷 저장 및 복원 (2/2)
+- `test-notion-client`: HTTP 429 지수 백오프 (4/4)
+- `test-e2e-sync`: Mock 서버 푸시/인출 및 아카이브 Failover (9/9)
+- `test-project-metadata`: 기술 스택 및 README 요약 추출 (3/3)
+- `test-pending-queue`: FIFO 큐 적재 및 completed 이동 (3/3)
+- `test-git-hook`: pre-push 훅 설치 및 Worktree E2E (4/4)
+- `test-diff-engine`: H1 섹션 분리 및 델타 재구성 (4/4)
+- `test-exporter`: .gitignore 격리 및 아카이브 덤프 (3/3)
+- `test-scaffold`: 초안 생성 및 --force 덮어쓰기 정책 (4/4)
+- `test-doctor`: 전수 비중단 진단 및 HTTP 핑 (4/4)
+- `test-search-engine`: YAML 프론트매터 및 BM25 스코어링 (7/7)
+- `test-verifier`: Git Graph 드리프트 분석, Stderr 캡처 및 Strict 모드 (9/9)
+- `test-sqlite-storage`: WAL 모드, BLOB 임베딩, B-Tree 룩업 및 CASCADE (5/5)
+- `test-vector-worker`: VectorWorkerClient 및 VectorWorkerPool 멀티 워커 배치 (4/4)
+- `test-index-cache`: 파일 락 상호 배제, Inode mtime 차분 및 batchEmbedFn (6/6)
+- `test-vector-engine`: multilingual-e5 ONNX 384차원 임베딩 (3/3)
+- `test-hybrid-search`: RRF 상호 순위 융합 및 워커 풀 배치 임베딩 (5/5)

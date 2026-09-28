@@ -72,7 +72,16 @@ console.log('[TEST] Starting CLI Routing Tests...');
   const res = runCLI('search --help');
   assert.strictEqual(res.status, 0, 'search --help 시 exit 0이어야 함');
   assert.match(res.stdout, /Usage: session-sync search --query <TEXT>/, 'search 도움말 형식 검증');
+  assert.match(res.stdout, /--mode <hybrid\|bm25\|vector>/, 'search 모드 옵션 안내 포함');
   console.log('  PASS: search --help 옵션 정상 처리');
+}
+
+// 6-1. search 쿼리 누락 시 에러 검증
+{
+  const res = runCLI('search');
+  assert.strictEqual(res.status, 1, 'search 쿼리 누락 시 exit 1이어야 함');
+  assert.match(res.stderr, /Error: Missing --query <TEXT>/, 'stderr 에러 안내 검증');
+  console.log('  PASS: search 쿼리 누락 시 안전한 차단 및 에러 안내');
 }
 
 // 7. verify --help 플래그 검증

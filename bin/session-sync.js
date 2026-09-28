@@ -28,7 +28,7 @@ Commands:
   fetch     Notion DB에서 세션 인덱스 또는 인수인계 본문 인출 (--diff 지원)
   scaffold  작업 트리 상태 기반 7섹션 인수인계서 초안 자동 생성
   doctor    환경 무결성 및 Notion 연결 상태 전수 진단
-  search    과거 세션 아카이브 대상 초고속 BM25 렉시컬 검색
+  search    과거 세션 아카이브 대상 하이브리드 RRF 융합 검색 (--mode hybrid|bm25|vector)
   verify    인수인계서와 실제 Git/작업트리/테스트 상태 불변식 검증
   hook      Git pre-push 훅 설치(install) 또는 실행(exec)
   ci        테스트 자동 실행, pass/fail 집계 및 Notion 푸시
@@ -151,15 +151,27 @@ async function main() {
   switch (parsed.command) {
     case 'search': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync search --query <TEXT> [--section <NAME>] [--limit <NUM>] [--json]");
+        console.log("Usage: session-sync search --query <TEXT> [--mode <hybrid|bm25|vector>] [--section <NAME>] [--limit <NUM>] [--json]");
         process.exit(0);
       }
-      executeSearch({
-        query: parsed.options.query,
-        section: parsed.options.section,
-        limit: parsed.options.limit,
-        json: Boolean(parsed.options.json)
+      const query = parsed.options.query;
+      if (!query || typeof query !== 'string' || query.trim() === '') {
+        console.error("Error: Missing --query <TEXT>");
+        process.exit(1);
+      }
+      const { HybridSearchEngine, formatHybridResults } = require('../lib/hybrid-search');
+      const engine = new HybridSearchEngine();
+      await engine.initialize();
+      const results = await engine.search(query, {
+        mode: parsed.options.mode || 'hybrid',
+        limit: parsed.options.limit ? Number(parsed.options.limit) : 3,
+        section: parsed.options.section
       });
+      if (parsed.options.json) {
+        console.log(JSON.stringify(results, null, 2));
+      } else {
+        console.log(formatHybridResults(results, query, parsed.options.mode || 'hybrid'));
+      }
       break;
     }
 
@@ -261,6 +273,11 @@ async function main() {
         process.exit(0);
       }
       await executePush(parsed.options);
+      try {
+        const { IndexCache } = require('../lib/index-cache');
+        const cache = new IndexCache();
+        cache.loadOrBuildSync();
+      } catch (_) {}
       break;
     }
 

@@ -21,7 +21,8 @@ const testSuites = [
   'tests/test-doctor.js',
   'tests/test-search-engine.js',
   'tests/test-verifier.js',
-  'tests/test-index-cache.js'
+  'tests/test-index-cache.js',
+  'tests/test-vector-engine.js'
 ];
 
 console.log('================================================================');

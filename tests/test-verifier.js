@@ -113,8 +113,8 @@ node -e "process.exit(0)"
   assert.strictEqual(driftReport.checks.some((c) => c.status === 'WARN'), true);
   console.log('  PASS: Git 커밋 불일치(DRIFT_DETECTED) 경고 감지 검증');
 
-  // 4.3 실패하는 테스트 명령어 포함 인수인계서
-  const failTestHandover = matchingHandover.replace('process.exit(0)', 'process.exit(1)');
+  // 4.3 실패하는 테스트 명령어 포함 인수인계서 (stderr 테일 캡처 검증)
+  const failTestHandover = matchingHandover.replace('process.exit(0)', 'console.error("CRITICAL_TEST_FAILURE_DETAIL"); process.exit(1)');
   const failTestPath = path.join(tempDir, 'HANDOVER_FAIL.md');
   fs.writeFileSync(failTestPath, failTestHandover, 'utf8');
 
@@ -127,13 +127,32 @@ node -e "process.exit(0)"
   assert.strictEqual(failReport.isValid, false);
   assert.strictEqual(failReport.testPassed, false);
   assert.strictEqual(failReport.checks.some((c) => c.status === 'FAIL'), true);
-  console.log('  PASS: 테스트 실패 시 불변식 위반(FAIL) 하드 감지 검증');
+  assert.ok(failReport.testErrorOutput && failReport.testErrorOutput.includes('CRITICAL_TEST_FAILURE_DETAIL'), '실패한 테스트의 stderr 출력이 캡처되어야 합니다.');
+  console.log('  PASS: 테스트 실패 시 불변식 위반(FAIL) 하드 감지 및 Stderr 테일 캡처 검증');
 
-  // 4.4 리포트 포맷팅 검증
-  const formatted = formatVerifyReport(matchReport);
+  // 4.4 Strict 모드 동작 검증
+  const strictReport = verifySessionInvariants({
+    cwd: process.cwd(),
+    file: driftPath,
+    runTest: false,
+    strict: true
+  });
+  assert.strictEqual(strictReport.isValid, false, 'Strict 모드에서는 드리프트 감지 시 isValid가 false여야 합니다.');
+  assert.strictEqual(strictReport.checks.some((c) => c.status === 'FAIL'), true);
+  console.log('  PASS: --strict 모드 지정 시 드리프트 하드 차단(FAIL) 검증');
+
+  // 4.5 Git Graph getGitDrift 함수 검증
+  const { getGitDrift } = require('../lib/verifier');
+  const exactDrift = getGitDrift(currentGit.headCommit, currentGit.headCommit, process.cwd());
+  assert.strictEqual(exactDrift.type, 'MATCH');
+  console.log('  PASS: getGitDrift 함수 동일 커밋 MATCH 판정 검증');
+
+  // 4.6 리포트 포맷팅 검증
+  const formatted = formatVerifyReport(failReport);
   assert.ok(formatted.includes('SESSION-SYNC INVARIANT VERIFIER REPORT'));
-  assert.ok(formatted.includes('Git Commit Consistency'));
-  console.log('  PASS: 진단 리포트 터미널 렌더링 무결성 검증');
+  assert.ok(formatted.includes('TEST ERROR OUTPUT (TAIL):'));
+  assert.ok(formatted.includes('CRITICAL_TEST_FAILURE_DETAIL'));
+  console.log('  PASS: 진단 리포트 터미널 렌더링 및 에러 트레이스 출력 검증');
 }
 
 console.log('[TEST] All Invariant Verifier Tests Passed Successfully.');

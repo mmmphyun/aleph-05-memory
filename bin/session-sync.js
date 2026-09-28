@@ -177,12 +177,13 @@ async function main() {
 
     case 'verify': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync verify [--file <PATH>] [--run-test] [--timeout <MS>] [--json] [--silent]");
+        console.log("Usage: session-sync verify [--file <PATH>] [--run-test] [--strict] [--timeout <MS>] [--json] [--silent]");
         process.exit(0);
       }
       executeVerify({
         file: parsed.options.file,
         runTest: Boolean(parsed.options['run-test']),
+        strict: Boolean(parsed.options.strict),
         timeout: parsed.options.timeout ? Number(parsed.options.timeout) : undefined,
         json: Boolean(parsed.options.json),
         silent: Boolean(parsed.options.silent)
@@ -283,13 +284,30 @@ async function main() {
 
     case 'fetch': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync fetch <--list | --latest | --diff> [--out <PATH>] [--verify]");
+        console.log("Usage: session-sync fetch <--list | --latest | --diff> [--out <PATH>] [--verify] [--run-test] [--strict]");
         process.exit(0);
       }
+
+      // 인출 전 로컬 파일 덮어쓰기 방지 백업
+      if (parsed.options.latest || parsed.options.out) {
+        const targetHandover = path.resolve(process.cwd(), parsed.options.out || 'HANDOVER.md');
+        if (fs.existsSync(targetHandover)) {
+          const backupDir = path.resolve(process.cwd(), '.session-memory', 'backups');
+          if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+          const backupPath = path.join(backupDir, `HANDOVER.${Date.now()}.bak`);
+          fs.copyFileSync(targetHandover, backupPath);
+        }
+      }
+
       await executeFetch(parsed.options);
+
       if (parsed.options.verify && (parsed.options.latest || parsed.options.out)) {
         const targetHandover = parsed.options.out || 'HANDOVER.md';
-        executeVerify({ file: targetHandover, runTest: false });
+        executeVerify({
+          file: targetHandover,
+          runTest: Boolean(parsed.options['run-test']),
+          strict: Boolean(parsed.options.strict)
+        });
       }
       break;
     }

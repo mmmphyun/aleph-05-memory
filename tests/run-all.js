@@ -22,7 +22,8 @@ const testSuites = [
   'tests/test-search-engine.js',
   'tests/test-verifier.js',
   'tests/test-index-cache.js',
-  'tests/test-vector-engine.js'
+  'tests/test-vector-engine.js',
+  'tests/test-hybrid-search.js'
 ];
 
 console.log('================================================================');

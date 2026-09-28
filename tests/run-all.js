@@ -20,7 +20,8 @@ const testSuites = [
   'tests/test-scaffold.js',
   'tests/test-doctor.js',
   'tests/test-search-engine.js',
-  'tests/test-verifier.js'
+  'tests/test-verifier.js',
+  'tests/test-index-cache.js'
 ];
 
 console.log('================================================================');

@@ -34,10 +34,11 @@ flowchart LR
 
 ---
 
-## 2. 9대 안티 바이패스 가드레일 규격
+## 2. 10대 보안 및 안티 바이패스 가드레일 규격
 
 | 번호 | 규칙명 | 검증 기준 및 차단 사유 |
 |:---:|:---|:---|
+| 0 | 시크릿 차단 | Gitleaks 정규식 기반 API 키, 개인키, 토큰, JWT 평문 탐지 시 즉시 차단 (`exit 1`) |
 | 1 | 회피 방지 | `TODO`, `TBD`, `N/A`, `none`, `생략` 단독 기재 시 즉시 거부 (`exit 1`) |
 | 2 | 최소 분량 | 각 섹션마다 최소 15자 이상의 구체적 기술 내용 기재 필수 |
 | 3 | 코드 블록 | `실행 명령` 섹션 내 실행 가능한 코드 블록(```) 1개 이상 포함 |
@@ -81,8 +82,16 @@ NOTION_DATABASE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ### 4.1 프로젝트 초기화 (`init`)
 빈 Notion 부모 페이지 하위에 2-Tier Projects 및 Session Memory 데이터베이스를 자동 구축하고 `.env`를 갱신합니다.
+- **멱등성 및 멀티 프로젝트 중앙 레지스트리 자동 재사용**:
+  - 부모 페이지에 이미 2-Tier DB가 존재하는 경우 중복 생성하지 않고 기존 DB ID를 자동 탐색하여 바인딩합니다.
+  - 이를 통해 여러 프로젝트가 동일한 부모 페이지를 공유하며 단일 중앙 레지스트리에 세션을 통합 관리할 수 있습니다.
+  - 강제 신규 생성이 필요한 경우 `--force` 플래그를 사용합니다.
 ```powershell
+# 기존 DB 자동 탐색 재사용 또는 최초 생성
 session-sync init --parent <NOTION_PAGE_URL_OR_ID> --write-env
+
+# 강제 신규 DB 생성 (필요 시)
+session-sync init --parent <NOTION_PAGE_URL_OR_ID> --write-env --force
 ```
 
 ### 4.2 환경 무결성 진단 (`doctor`)

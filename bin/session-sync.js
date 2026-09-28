@@ -221,7 +221,7 @@ async function main() {
 
     case 'init': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID> [--write-env]");
+        console.log("Usage: session-sync init --parent <PAGE_URL_OR_ID> [--write-env] [--force]");
         process.exit(0);
       }
       const rawParent = parsed.options.parent || process.env.NOTION_PARENT_PAGE_ID;
@@ -232,18 +232,71 @@ async function main() {
       const parentId = extractPageId(rawParent);
       const client = new NotionClient();
 
-      console.log(`[INIT] Creating 2-Tier Notion Databases under parent page: ${parentId}...`);
+      console.log(`[INIT] Inspecting parent page: ${parentId}...`);
 
-      // 1. Projects DB 생성
-      const projDbRes = await client.createProjectsDatabase(parentId);
-      const projectsDbId = projDbRes.data.id;
-      console.log(`[INIT_SUCCESS] Created Projects DB ID: ${projectsDbId}`);
+      let projectsDbId = null;
+      let sessionDbId = null;
 
-      // 2. Session Memory DB 생성 (Projects DB와의 Relation 연결)
-      const sessionSchema = getDatabaseSchema('Agent Session Memory DB', projectsDbId);
-      const sessionDbRes = await client.createDatabase(parentId, sessionSchema);
-      const sessionDbId = sessionDbRes.data.id;
-      console.log(`[INIT_SUCCESS] Created Session Memory DB ID: ${sessionDbId}`);
+      // 1. 부모 페이지 하위 기존 2-Tier DB 존재 여부 탐색 (멱등성 보장, --force 지정 시 건너뜀)
+      if (!parsed.options.force) {
+        try {
+          const childrenRes = await client.getBlockChildren(parentId);
+          const childDatabases = (childrenRes.data && childrenRes.data.results || []).filter(
+            (b) => b.type === 'child_database'
+          );
+
+          for (const db of childDatabases) {
+            const title = (db.child_database && db.child_database.title) || '';
+            if (/projects\s*registry/i.test(title) && !projectsDbId) {
+              projectsDbId = db.id;
+            }
+          }
+
+          // Projects Registry가 발견된 경우, 해당 DB와 Relation을 가진 Session DB 탐색
+          for (const db of childDatabases) {
+            const title = (db.child_database && db.child_database.title) || '';
+            if (/session\s*memory/i.test(title)) {
+              if (projectsDbId) {
+                try {
+                  const dbDetail = await client._request('GET', `/v1/databases/${db.id}`);
+                  const props = (dbDetail.data && dbDetail.data.properties) || {};
+                  if (props.ProjectRegistry && props.ProjectRegistry.type === 'relation') {
+                    sessionDbId = db.id;
+                    break;
+                  }
+                } catch (_) {}
+              }
+              if (!sessionDbId) {
+                sessionDbId = db.id;
+              }
+            }
+          }
+        } catch (scanErr) {
+          console.warn(`[INIT_WARN] Failed to scan parent page children: ${scanErr.message}. Proceeding to creation.`);
+        }
+      }
+
+      if (projectsDbId && sessionDbId && !parsed.options.force) {
+        console.log(`[INIT_REUSE] Found existing 2-Tier databases under parent page (Idempotent):`);
+        console.log(`  - Projects DB : ${projectsDbId}`);
+        console.log(`  - Session DB  : ${sessionDbId}`);
+      } else {
+        // 2. 존재하지 않는 경우 신규 생성
+        if (!projectsDbId || parsed.options.force) {
+          console.log(`[INIT] Creating Projects DB under parent page: ${parentId}...`);
+          const projDbRes = await client.createProjectsDatabase(parentId);
+          projectsDbId = projDbRes.data.id;
+          console.log(`[INIT_SUCCESS] Created Projects DB ID: ${projectsDbId}`);
+        }
+
+        if (!sessionDbId || parsed.options.force) {
+          console.log(`[INIT] Creating Session Memory DB under parent page: ${parentId}...`);
+          const sessionSchema = getDatabaseSchema('Agent Session Memory DB', projectsDbId);
+          const sessionDbRes = await client.createDatabase(parentId, sessionSchema);
+          sessionDbId = sessionDbRes.data.id;
+          console.log(`[INIT_SUCCESS] Created Session Memory DB ID: ${sessionDbId}`);
+        }
+      }
 
       // 3. 로컬 캐시 기록 및 .gitignore 격리
       saveProjectCache(process.cwd(), {

@@ -225,5 +225,33 @@ BM25 검색 엔진 추가
   assert.deepStrictEqual(res.chunks[0].vector, [0.5, 0.5, 0.5]);
   console.log('  PASS: 비동기 loadOrBuild 및 embedFn 벡터 주입 검증');
 
+  // 6. 파일 락(Process Concurrency Lock) 상호 배제 및 Stale 회수 검증
+  const { acquireLockSync, releaseLock, withLockSync } = require('../lib/index-cache');
+  const lockDir = path.join(testOutDir, 'test.lock');
+
+  // 락 획득
+  const acquired1 = acquireLockSync(lockDir, 500);
+  assert.strictEqual(acquired1, true, '최초 락 획득은 성공해야 합니다.');
+
+  // 동일 락 중복 획득 시 타임아웃 실패
+  const acquired2 = acquireLockSync(lockDir, 100);
+  assert.strictEqual(acquired2, false, '이미 점유된 락 획득은 실패해야 합니다.');
+
+  // 락 해제 후 재획득
+  releaseLock(lockDir);
+  const acquired3 = acquireLockSync(lockDir, 500);
+  assert.strictEqual(acquired3, true, '해제 후 락 획득은 성공해야 합니다.');
+  releaseLock(lockDir);
+
+  // withLockSync 실행 안전성 검증
+  let executedInLock = false;
+  withLockSync(() => {
+    executedInLock = true;
+    assert.ok(fs.existsSync(lockDir), 'withLockSync 내부에서 락 디렉토리가 존재해야 합니다.');
+  }, lockDir);
+  assert.strictEqual(executedInLock, true);
+  assert.strictEqual(fs.existsSync(lockDir), false, 'withLockSync 종료 후 락이 자동 해제되어야 합니다.');
+  console.log('  PASS: 파일 락 획득, 중복 차단 및 withLockSync 해제 무결성 검증');
+
   console.log('[TEST] All Index Cache Tests Passed Successfully.');
 })();

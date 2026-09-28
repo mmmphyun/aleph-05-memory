@@ -199,6 +199,8 @@ console.log('[TEST] Starting Hybrid Search Engine Tests...');
     }
 
     console.log('[TEST] All Hybrid Search Tests Passed Successfully.');
+    const { getDefaultWorkerClient } = require('../lib/vector-worker');
+    await getDefaultWorkerClient().terminate();
   } catch (err) {
     console.error('[TEST_FAIL] Hybrid Search Test failed:', err);
     process.exit(1);

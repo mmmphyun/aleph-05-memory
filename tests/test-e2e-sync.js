@@ -127,6 +127,41 @@ async function runSubprocessMockTests() {
       assert.ok(restoredContent.includes('복원된 목표 본문입니다.'));
       console.log('  PASS [T10]: 최신 인수인계 마크다운 복원 E2E 검증');
     }
+
+    // T11: 오프라인 아카이브 Failover 복원 CLI 검증
+    {
+      const archiveTestDir = path.resolve(__dirname, 'out/test-archives');
+      if (!fs.existsSync(archiveTestDir)) fs.mkdirSync(archiveTestDir, { recursive: true });
+      const archiveFilePath = path.join(archiveTestDir, '20260928_999999_TEST_FAILOVER.md');
+      const dummyArchiveContent = [
+        '---',
+        'archived_at: 2026-09-28T00:00:00.000Z',
+        'project: test-project',
+        '---',
+        '# 1. 목표',
+        '',
+        '아카이브에서 안전하게 복원된 오프라인 목표입니다.'
+      ].join('\n');
+      fs.writeFileSync(archiveFilePath, dummyArchiveContent, 'utf8');
+
+      const { executeFetch } = require('../lib/sync-engine');
+      const failoverOut = path.resolve(__dirname, 'out/FAILOVER_RESTORED.md');
+      const fetchResult = await executeFetch({
+        mockPort: 59998, // 미기동 포트로 네트워크 장애 유발
+        apiKey: 'offline-key',
+        out: 'tests/out/FAILOVER_RESTORED.md',
+        failoverArchive: true,
+        archiveDir: archiveTestDir
+      });
+
+      assert.strictEqual(fetchResult.success, true, 'Failover 복원은 성공해야 함');
+      assert.strictEqual(fetchResult.source, 'archive', '복원 소스는 archive여야 함');
+      assert.ok(fetchResult.filePath.includes('FAILOVER_RESTORED.md'), '출력 경로가 반환되어야 함');
+      assert.ok(fs.existsSync(failoverOut), '복원된 파일이 디스크에 생성되어야 함');
+      const fileData = fs.readFileSync(failoverOut, 'utf8');
+      assert.ok(fileData.includes('아카이브에서 안전하게 복원된 오프라인 목표입니다.'));
+      console.log('  PASS [T11]: 오프라인 네트워크 단절 시 로컬 아카이브 Failover 복원 검증');
+    }
   } finally {
     mockProcess.kill();
   }

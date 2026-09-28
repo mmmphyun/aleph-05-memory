@@ -284,7 +284,7 @@ async function main() {
 
     case 'fetch': {
       if (parsed.options.help) {
-        console.log("Usage: session-sync fetch <--list | --latest | --diff> [--out <PATH>] [--verify] [--run-test] [--strict]");
+        console.log("Usage: session-sync fetch <--list | --latest | --diff> [--out <PATH>] [--verify] [--run-test] [--strict] [--failover-archive]");
         process.exit(0);
       }
 
@@ -299,7 +299,11 @@ async function main() {
         }
       }
 
-      await executeFetch(parsed.options);
+      const fetchOptions = {
+        ...parsed.options,
+        failoverArchive: Boolean(parsed.options['failover-archive'])
+      };
+      await executeFetch(fetchOptions);
 
       if (parsed.options.verify && (parsed.options.latest || parsed.options.out)) {
         const targetHandover = parsed.options.out || 'HANDOVER.md';

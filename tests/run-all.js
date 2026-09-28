@@ -22,6 +22,7 @@ const testSuites = [
   'tests/test-search-engine.js',
   'tests/test-verifier.js',
   'tests/test-sqlite-storage.js',
+  'tests/test-vector-worker.js',
   'tests/test-index-cache.js',
   'tests/test-vector-engine.js',
   'tests/test-hybrid-search.js'

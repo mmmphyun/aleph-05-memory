@@ -198,9 +198,61 @@ console.log('[TEST] Starting Hybrid Search Engine Tests...');
       console.log('  PASS: 하이브리드 검색 터미널 서식화 및 순위 정보 렌더링 검증');
     }
 
+    // 5. VectorWorkerPool 연동 온디맨드 배치 임베딩 및 하이브리드 검색 검증
+    {
+      const engine = new HybridSearchEngine();
+      const chunkMissing1 = {
+        id: 'pool_test1.md#목표',
+        relativeFile: 'pool_test1.md',
+        filePath: '/tmp/pool_test1.md',
+        section: '목표',
+        sectionTitle: '# 1. 목표',
+        content: '분산 워커 풀을 통한 대용량 벡터 임베딩 고속 연산',
+        tokens: tokenize('분산 워커 풀을 통한 대용량 벡터 임베딩 고속 연산'),
+        tokenFreqs: new Map(),
+        length: 7,
+        vector: null, // 미생성 벡터
+        isSuperseded: false,
+        metadata: { commitHash: 'poolhash1' }
+      };
+      const chunkMissing2 = {
+        id: 'pool_test2.md#실행 명령',
+        relativeFile: 'pool_test2.md',
+        filePath: '/tmp/pool_test2.md',
+        section: '실행 명령',
+        sectionTitle: '# 3. 실행 명령',
+        content: 'node bin/session-sync.js search --mode hybrid 실행 가이드',
+        tokens: tokenize('node bin/session-sync.js search --mode hybrid 실행 가이드'),
+        tokenFreqs: new Map(),
+        length: 8,
+        vector: null, // 미생성 벡터
+        isSuperseded: false,
+        metadata: { commitHash: 'poolhash2' }
+      };
+
+      engine.setChunks([chunkMissing1, chunkMissing2]);
+      const { getDefaultWorkerPool } = require('../lib/vector-worker');
+      const pool = getDefaultWorkerPool();
+
+      // missingVectors 배치 임베딩 생성 시뮬레이션
+      const texts = [chunkMissing1.content, chunkMissing2.content];
+      const vectors = await pool.dispatchBatch(texts);
+      assert.strictEqual(vectors.length, 2);
+      assert.strictEqual(vectors[0].length, 384);
+      assert.strictEqual(vectors[1].length, 384);
+      chunkMissing1.vector = vectors[0];
+      chunkMissing2.vector = vectors[1];
+
+      const searchRes = await engine.search('대용량 벡터 고속 연산', { mode: 'hybrid' });
+      assert.ok(searchRes.length > 0, '워커 풀 임베딩 결과로 검색이 성공해야 함');
+      assert.strictEqual(searchRes[0].file, 'pool_test1.md');
+      console.log('  PASS: VectorWorkerPool 연동 온디맨드 배치 임베딩 및 하이브리드 검색 검증');
+    }
+
     console.log('[TEST] All Hybrid Search Tests Passed Successfully.');
-    const { getDefaultWorkerClient } = require('../lib/vector-worker');
+    const { getDefaultWorkerClient, getDefaultWorkerPool } = require('../lib/vector-worker');
     await getDefaultWorkerClient().terminate();
+    await getDefaultWorkerPool().terminate();
   } catch (err) {
     console.error('[TEST_FAIL] Hybrid Search Test failed:', err);
     process.exit(1);
